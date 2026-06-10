@@ -1,11 +1,28 @@
 import { DatabaseState, Trip, Batch, Booking } from "./types";
-import dbData from "./db.json";
 
-// In-memory storage
-let localDB: DatabaseState = dbData as DatabaseState;
-let nextBookingId = localDB.bookings.length + 1;
+let localDB: DatabaseState | null = null;
+let nextBookingId = 1;
 
-// Simpan ke localStorage
+async function loadDB(): Promise<DatabaseState> {
+  if (localDB) return localDB;
+  
+  try {
+    const saved = localStorage.getItem("smart-journey-db");
+    if (saved) {
+      localDB = JSON.parse(saved);
+      return localDB;
+    }
+  } catch (e) {
+    console.warn("Gagal load dari localStorage");
+  }
+  
+  const res = await fetch("/db.json");
+  if (!res.ok) throw new Error("Failed to load database");
+  localDB = await res.json();
+  nextBookingId = localDB.bookings.length + 1;
+  return localDB;
+}
+
 function saveToStorage() {
   try {
     localStorage.setItem("smart-journey-db", JSON.stringify(localDB));
@@ -14,83 +31,75 @@ function saveToStorage() {
   }
 }
 
-// Load dari localStorage
-function loadFromStorage() {
-  try {
-    const saved = localStorage.getItem("smart-journey-db");
-    if (saved) {
-      localDB = JSON.parse(saved);
-    }
-  } catch (e) {
-    console.warn("Gagal load dari localStorage");
-  }
-}
-
-loadFromStorage();
-
-// Helper delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export async function fetchDB(): Promise<DatabaseState> {
   await delay(200);
-  return { ...localDB };
+  return await loadDB();
 }
 
 export async function createTrip(trip: Omit<Trip, "id">): Promise<Trip> {
+  const db = await loadDB();
   await delay(300);
   const newTrip: Trip = { ...trip, id: `trip-${Date.now()}` } as Trip;
-  localDB.trips.push(newTrip);
+  db.trips.push(newTrip);
   saveToStorage();
   return newTrip;
 }
 
 export async function updateTrip(id: string, trip: Partial<Trip>): Promise<Trip> {
+  const db = await loadDB();
   await delay(300);
-  const index = localDB.trips.findIndex(t => t.id === id);
+  const index = db.trips.findIndex(t => t.id === id);
   if (index === -1) throw new Error("Trip not found");
-  localDB.trips[index] = { ...localDB.trips[index], ...trip } as Trip;
+  db.trips[index] = { ...db.trips[index], ...trip } as Trip;
   saveToStorage();
-  return localDB.trips[index];
+  return db.trips[index];
 }
 
 export async function deleteTrip(id: string): Promise<void> {
+  const db = await loadDB();
   await delay(300);
-  localDB.trips = localDB.trips.filter(t => t.id !== id);
+  db.trips = db.trips.filter(t => t.id !== id);
   saveToStorage();
 }
 
 export async function createBatch(batch: Omit<Batch, "id">): Promise<Batch> {
+  const db = await loadDB();
   await delay(300);
   const newBatch: Batch = { ...batch, id: `batch-${Date.now()}` } as Batch;
-  localDB.batches.push(newBatch);
+  db.batches.push(newBatch);
   saveToStorage();
   return newBatch;
 }
 
 export async function updateBatch(id: string, batch: Partial<Batch>): Promise<Batch> {
+  const db = await loadDB();
   await delay(300);
-  const index = localDB.batches.findIndex(b => b.id === id);
+  const index = db.batches.findIndex(b => b.id === id);
   if (index === -1) throw new Error("Batch not found");
-  localDB.batches[index] = { ...localDB.batches[index], ...batch } as Batch;
+  db.batches[index] = { ...db.batches[index], ...batch } as Batch;
   saveToStorage();
-  return localDB.batches[index];
+  return db.batches[index];
 }
 
 export async function deleteBatch(id: string): Promise<void> {
+  const db = await loadDB();
   await delay(300);
-  localDB.batches = localDB.batches.filter(b => b.id !== id);
+  db.batches = db.batches.filter(b => b.id !== id);
   saveToStorage();
 }
 
 export async function createBooking(
   booking: Omit<Booking, "id" | "bookingCode" | "status" | "createdAt" | "tripTitle" | "departureDate">
 ): Promise<Booking> {
+  const db = await loadDB();
   await delay(500);
   
-  const batch = localDB.batches.find(b => b.id === booking.batchId);
+  const batch = db.batches.find(b => b.id === booking.batchId);
   if (!batch) throw new Error("Batch not found");
   
-  const trip = localDB.trips.find(t => t.id === batch.tripId);
+  const trip = db.trips.find(t => t.id === batch.tripId);
   if (!trip) throw new Error("Trip not found");
   
   const bookingCode = "SJ-" + Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -105,18 +114,19 @@ export async function createBooking(
     departureDate: batch.departureDate,
   } as Booking;
   
-  localDB.bookings.push(newBooking);
+  db.bookings.push(newBooking);
   saveToStorage();
   return newBooking;
 }
 
 export async function updateBooking(id: string, updates: Partial<Booking>): Promise<Booking> {
+  const db = await loadDB();
   await delay(300);
-  const index = localDB.bookings.findIndex(b => b.id === id);
+  const index = db.bookings.findIndex(b => b.id === id);
   if (index === -1) throw new Error("Booking not found");
-  localDB.bookings[index] = { ...localDB.bookings[index], ...updates } as Booking;
+  db.bookings[index] = { ...db.bookings[index], ...updates } as Booking;
   saveToStorage();
-  return localDB.bookings[index];
+  return db.bookings[index];
 }
 
 export async function adminLogin(email: string, password: string): Promise<{ token: string; success: boolean }> {
@@ -128,7 +138,8 @@ export async function adminLogin(email: string, password: string): Promise<{ tok
 }
 
 export async function purgeAllBookings(): Promise<void> {
+  const db = await loadDB();
   await delay(300);
-  localDB.bookings = [];
+  db.bookings = [];
   saveToStorage();
 }
